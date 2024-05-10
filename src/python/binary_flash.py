@@ -62,7 +62,8 @@ def upload_stm32_stlink(args, options: FirmwareOptions):
     app_start = flash_start + offset
 
     if options.bootloader is not None:
-        stlink.program_flash('bootloader/' + options.bootloader, flash_start, erase=True, verify=True, initialize_comms=True)
+        bootloader_dir = '' if args.fdir is None else args.fdir + '/'
+        stlink.program_flash(bootloader_dir + 'bootloader/' + options.bootloader, flash_start, erase=True, verify=True, initialize_comms=True)
 
     stlink.program_flash(args.file.name, app_start, erase=True, verify=True, initialize_comms=True)
 
@@ -103,9 +104,10 @@ def upload_esp32_uart(args):
         args.port = serials_find.get_serial_port()
     try:
         dir = os.path.dirname(args.file.name)
-        cmd = ['--chip', 'esp32', '--port', args.port, '--baud', str(args.baud), '--after', 'hard_reset', 'write_flash']
+        cmd = ['--chip', args.platform.replace('-', ''), '--port', args.port, '--baud', str(args.baud), '--after', 'hard_reset', 'write_flash']
         if args.erase: cmd.append('--erase-all')
-        cmd.extend(['-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', '0x1000', os.path.join(dir, 'bootloader.bin'), '0x8000', os.path.join(dir, 'partitions.bin'), '0xe000', os.path.join(dir, 'boot_app0.bin'), '0x10000', args.file.name])
+        start_addr = '0x0000' if args.platform.startswith('esp32-') else '0x1000'
+        cmd.extend(['-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', start_addr, os.path.join(dir, 'bootloader.bin'), '0x8000', os.path.join(dir, 'partitions.bin'), '0xe000', os.path.join(dir, 'boot_app0.bin'), '0x10000', args.file.name])
         esptool.main(cmd)
     except:
         return ElrsUploadResult.ErrorGeneral
@@ -117,9 +119,10 @@ def upload_esp32_etx(args):
     ETXinitPassthrough.etx_passthrough_init(args.port, args.baud)
     try:
         dir = os.path.dirname(args.file.name)
-        cmd = ['--chip', 'esp32', '--port', args.port, '--baud', str(args.baud), '--before', 'no_reset', '--after', 'hard_reset', 'write_flash']
+        cmd = ['--chip', args.platform.replace('-', ''), '--port', args.port, '--baud', str(args.baud), '--before', 'no_reset', '--after', 'hard_reset', 'write_flash']
         if args.erase: cmd.append('--erase-all')
-        cmd.extend(['-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', '0x1000', os.path.join(dir, 'bootloader.bin'), '0x8000', os.path.join(dir, 'partitions.bin'), '0xe000', os.path.join(dir, 'boot_app0.bin'), '0x10000', args.file.name])
+        start_addr = '0x0000' if args.platform.startswith('esp32-') else '0x1000'
+        cmd.extend(['-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', start_addr, os.path.join(dir, 'bootloader.bin'), '0x8000', os.path.join(dir, 'partitions.bin'), '0xe000', os.path.join(dir, 'boot_app0.bin'), '0x10000', args.file.name])
         esptool.main(cmd)
     except:
         return ElrsUploadResult.ErrorGeneral
@@ -135,7 +138,7 @@ def upload_esp32_bf(args, options):
     if retval != ElrsUploadResult.Success:
         return retval
     try:
-        esptool.main(['--passthrough', '--chip', 'esp32', '--port', args.port, '--baud', str(args.baud), '--before', 'no_reset', '--after', 'hard_reset', 'write_flash', '-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', '0x10000', args.file.name])
+        esptool.main(['--passthrough', '--chip', args.platform.replace('-', ''), '--port', args.port, '--baud', str(args.baud), '--before', 'no_reset', '--after', 'hard_reset', 'write_flash', '-z', '--flash_mode', 'dio', '--flash_freq', '40m', '--flash_size', 'detect', '0x10000', args.file.name])
     except:
         return ElrsUploadResult.ErrorGeneral
     return ElrsUploadResult.Success
@@ -180,7 +183,12 @@ def upload(options: FirmwareOptions, args):
             elif args.flash == UploadMethod.stlink:      # untested
                 return upload_stm32_stlink(args, options)
     else:
-        if options.mcuType == MCUType.ESP32:
+        if options.mcuType == MCUType.ESP8266:
+            if args.flash == UploadMethod.uart:
+                return upload_esp8266_uart(args)
+            elif args.flash == UploadMethod.wifi:
+                return upload_wifi(args, options, ['elrs_tx', 'elrs_tx.local'], False)
+        elif options.mcuType == MCUType.ESP32:
             if args.flash == UploadMethod.edgetx:
                 return upload_esp32_etx(args)
             elif args.flash == UploadMethod.uart:

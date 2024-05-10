@@ -26,7 +26,7 @@ public:
 
     ////////////////Configuration Functions/////////////
     SX127xDriver();
-    bool Begin();
+    bool Begin(uint32_t minimumFrequency, uint32_t maximumFrequency);
     void End();
     bool DetectChip(SX12XX_Radio_Number_t radioNumber);
     void Config(uint8_t bw, uint8_t sf, uint8_t cr, uint32_t freq, uint8_t preambleLen, uint8_t syncWord, bool InvertIQ, uint8_t _PayloadLength, uint32_t interval);
@@ -78,7 +78,7 @@ public:
 private:
     // constant used for no power change pending
     // must not be a valid power register value
-    static const uint8_t PWRPENDING_NONE = SX127X_MAX_OUTPUT_POWER_INVALID;
+    static const int16_t PWRPENDING_NONE = -1;
 
     SX127x_Bandwidth currBW;
     SX127x_SpreadingFactor currSF;
@@ -88,7 +88,7 @@ private:
     uint8_t currSyncWord;
     uint8_t currPreambleLen;
     uint8_t pwrCurrent;
-    uint8_t pwrPending;
+    int16_t pwrPending;
     uint8_t lowFrequencyMode;
 
     static void IsrCallback_1();

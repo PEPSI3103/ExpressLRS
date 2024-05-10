@@ -52,7 +52,7 @@ SX127xDriver::SX127xDriver(): SX12xxDriverCommon()
   lastSuccessfulPacketRadio = SX12XX_Radio_1;
 }
 
-bool SX127xDriver::Begin()
+bool SX127xDriver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
 {
   hal.init();
   hal.IsrCallback_1 = &SX127xDriver::IsrCallback_1;
@@ -86,9 +86,21 @@ bool SX127xDriver::Begin()
   }
 
   ConfigLoraDefaults();
-  // Force the next power update
+  // Force the next power update, and use the defaults for RFO_HF or PA_BOOST
   pwrCurrent = PWRPENDING_NONE;
-  SetOutputPower(0);
+#if defined(TARGET_UNIFIED_RX) || defined(TARGET_UNIFIED_TX)
+  if (POWER_OUTPUT_VALUES2 == nullptr)
+#endif
+  {
+    if (OPT_USE_SX1276_RFO_HF)
+    {
+      SetOutputPower(SX127X_MAX_OUTPUT_POWER_RFO_HF);
+    }
+    else
+    {
+      SetOutputPower(SX127X_MAX_OUTPUT_POWER);
+    }
+  }
   CommitOutputPower();
 
   return true;
@@ -224,13 +236,15 @@ void SX127xDriver::SetSyncWord(uint8_t syncWord)
 void SX127xDriver::SetOutputPower(uint8_t Power)
 {
   uint8_t pwrNew;
+  Power &= SX127X_PA_POWER_MASK;
+
   if (OPT_USE_SX1276_RFO_HF)
   {
-    pwrNew = SX127X_PA_SELECT_RFO | SX127X_MAX_OUTPUT_POWER_RFO_HF | Power;
+    pwrNew = SX127X_PA_SELECT_RFO | Power;
   }
   else
   {
-    pwrNew = SX127X_PA_SELECT_BOOST | SX127X_MAX_OUTPUT_POWER | Power;
+    pwrNew = SX127X_PA_SELECT_BOOST | Power;
   }
 
   if ((pwrPending == PWRPENDING_NONE && pwrCurrent != pwrNew) || pwrPending != pwrNew)
@@ -244,7 +258,7 @@ void ICACHE_RAM_ATTR SX127xDriver::CommitOutputPower()
   if (pwrPending == PWRPENDING_NONE)
     return;
 
-  pwrCurrent = pwrPending;
+  pwrCurrent = pwrPending & 0xFF;
   pwrPending = PWRPENDING_NONE;
   hal.writeRegister(SX127X_REG_PA_CONFIG, pwrCurrent, SX12XX_Radio_All);
 }
@@ -332,7 +346,7 @@ void ICACHE_RAM_ATTR SX127xDriver::SetRxTimeoutUs(uint32_t interval)
     timeoutSymbols = interval / symbolTimeUs;
     hal.writeRegisterBits(SX127X_REG_SYMB_TIMEOUT_MSB, timeoutSymbols >> 8, SX127X_REG_SYMB_TIMEOUT_MSB_MASK, SX12XX_Radio_All);  // set the timeout MSB
     hal.writeRegister(SX127X_REG_SYMB_TIMEOUT_LSB, timeoutSymbols & 0xFF, SX12XX_Radio_All);
-    DBGLN("SetRxTimeout(%u), symbolTime=%uus symbols=%u", interval, (uint32_t)symbolTimeUs, timeoutSymbols)
+    DBGLN("SetRxTimeout(%u), symbolTime=%uus symbols=%u", interval, (uint32_t)symbolTimeUs, timeoutSymbols);
   }
 }
 
@@ -390,7 +404,7 @@ void ICACHE_RAM_ATTR SX127xDriver::TXnb(uint8_t * data, uint8_t size, SX12XX_Rad
   // }
 
   transmittingRadio = radioNumber;
-  
+
   SetMode(SX127x_OPMODE_STANDBY, SX12XX_Radio_All);
 
   if (radioNumber == SX12XX_Radio_NONE)
@@ -473,9 +487,6 @@ void ICACHE_RAM_ATTR SX127xDriver::GetLastPacketStats()
       hal.writeRegister(SX127X_REG_FIFO_ADDR_PTR, FIFOaddr, radio[secondRadioIdx]);
       hal.readRegister(SX127X_REG_FIFO, RXdataBuffer_second, PayloadLength, radio[secondRadioIdx]);
 
-      // leaving only the type in the first byte (crcHigh was cleared)
-      RXdataBuffer[0] &= 0b11;
-      RXdataBuffer_second[0] &= 0b11;
       // if the second packet is same to the first, it's valid
       if (memcmp(RXdataBuffer, RXdataBuffer_second, PayloadLength) == 0)
       {
